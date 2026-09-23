@@ -1,0 +1,23 @@
+import { Smartphone, Handshake, CreditCard, ShieldCheck, Users, Store, type LucideIcon } from "lucide-react";
+
+const ICONS: Record<string, LucideIcon> = {
+  Smartphone,
+  Handshake,
+  CreditCard,
+  ShieldCheck,
+  Users,
+  Store,
+};
+
+export function ProductIcon({
+  name,
+  className,
+  style,
+}: {
+  name: string;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const Icon = ICONS[name] ?? Smartphone;
+  return <Icon className={className} style={style} />;
+}
