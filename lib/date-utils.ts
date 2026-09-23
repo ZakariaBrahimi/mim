@@ -99,6 +99,61 @@ export function computeDisplayRange(
   return { start, end };
 }
 
+/**
+ * Q4 of the year containing `now` — Oct 1 through Dec 31. If `now` is
+ * already in Q4, rolls forward to next year's Q4 rather than returning a
+ * mostly-past window.
+ */
+export function getQ4Window(now: Date = new Date()): { start: Date; end: Date } {
+  const year = now.getMonth() >= 9 ? now.getFullYear() + 1 : now.getFullYear();
+  return {
+    start: new Date(year, 9, 1),
+    end: new Date(year, 11, 31),
+  };
+}
+
+/**
+ * Parses a ClickUp sprint list name like "Sprint 26 (9/23 - 10/6)" into a
+ * concrete date range, anchored to whichever year makes the range closest
+ * to `referenceDate` (handles a sprint spanning a Dec -> Jan year boundary).
+ */
+export function parseSprintDateRange(
+  listName: string,
+  referenceDate: Date = new Date(),
+): { start: Date; end: Date } | null {
+  const match = listName.match(
+    /\((\d{1,2})\/(\d{1,2})\s*-\s*(\d{1,2})\/(\d{1,2})\)/,
+  );
+  if (!match) return null;
+
+  const [, sm, sd, em, ed] = match.map(Number) as unknown as [
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+
+  const refYear = referenceDate.getFullYear();
+  let best: { start: Date; end: Date } | null = null;
+  let bestDiff = Infinity;
+
+  for (const yearOffset of [-1, 0, 1]) {
+    const startYear = refYear + yearOffset;
+    const endYear = em < sm ? startYear + 1 : startYear;
+    const start = new Date(startYear, sm - 1, sd);
+    const end = new Date(endYear, em - 1, ed);
+    const midpoint = (start.getTime() + end.getTime()) / 2;
+    const diff = Math.abs(midpoint - referenceDate.getTime());
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = { start, end };
+    }
+  }
+
+  return best;
+}
+
 export function getMonthsInRange(start: Date, end: Date): Date[] {
   const months: Date[] = [];
   const cursor = new Date(start.getFullYear(), start.getMonth(), 1);

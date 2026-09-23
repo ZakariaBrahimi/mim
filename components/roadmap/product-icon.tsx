@@ -8,6 +8,7 @@ import {
   Settings2,
   Globe,
   Landmark,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ const ICONS: Record<string, LucideIcon> = {
   Settings2,
   Globe,
   Landmark,
+  Layers,
 };
 
 export function ProductIcon({

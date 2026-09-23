@@ -140,6 +140,63 @@ export async function fetchAllTasks(): Promise<ClickUpTask[]> {
   return tasksByList.flat();
 }
 
+const DEFAULT_SPRINT_FOLDER_ID = "901212077700"; // "Sprint Folder" in Mizaniya Pay 2
+
+export interface CurrentSprint {
+  id: string;
+  name: string;
+  start: Date;
+  end: Date;
+}
+
+/**
+ * Resolves whichever sprint is "current" as of now, by scanning the sprint
+ * folder and parsing each list's "Sprint NN (M/D - M/D)" name.
+ * CLICKUP_CURRENT_SPRINT_LIST_ID overrides the *selection* (still fetches
+ * that list's own name/dates rather than trusting the env var blindly).
+ */
+export async function resolveCurrentSprint(): Promise<CurrentSprint | null> {
+  const folderId = process.env.CLICKUP_SPRINT_FOLDER_ID || DEFAULT_SPRINT_FOLDER_ID;
+  const override = process.env.CLICKUP_CURRENT_SPRINT_LIST_ID;
+  const { parseSprintDateRange } = await import("../date-utils");
+  const now = new Date();
+
+  try {
+    const lists = await fetchFolderLists(folderId);
+
+    if (override) {
+      const list = lists.find((l) => l.id === override);
+      if (list) {
+        const range = parseSprintDateRange(list.name, now) ?? {
+          start: now,
+          end: now,
+        };
+        return { id: list.id, name: list.name, ...range };
+      }
+    }
+
+    let best: { id: string; name: string; start: Date; end: Date; distance: number } | null =
+      null;
+    for (const list of lists) {
+      const range = parseSprintDateRange(list.name, now);
+      if (!range) continue;
+      const inRange = now >= range.start && now <= range.end;
+      const distance = inRange
+        ? 0
+        : Math.min(
+            Math.abs(now.getTime() - range.start.getTime()),
+            Math.abs(now.getTime() - range.end.getTime()),
+          );
+      if (!best || distance < best.distance) {
+        best = { id: list.id, name: list.name, ...range, distance };
+      }
+    }
+    return best;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchWorkspaceMembers(): Promise<ClickUpMember[]> {
   const { workspaceId } = getCredentials();
   const data = await clickupFetch<{

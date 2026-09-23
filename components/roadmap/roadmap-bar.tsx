@@ -82,6 +82,7 @@ export function RoadmapBar({ item, rangeStart, rangeEnd, onSelect, onDragEnd }: 
         "group absolute top-1/2 flex h-6 -translate-y-1/2 cursor-grab items-center rounded-md px-2 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing",
         cfg.barClass,
         item.status === "blocked" && "cursor-not-allowed opacity-80",
+        item.isAutoScheduled && "border-2 border-dashed border-white/60 opacity-80",
         dragging && "shadow-lg ring-2 ring-white",
       )}
       style={{
@@ -89,7 +90,7 @@ export function RoadmapBar({ item, rangeStart, rangeEnd, onSelect, onDragEnd }: 
         width: `${widthPct}%`,
         minWidth: "28px",
       }}
-      title={`${item.title} · ${STATUS_CONFIG[item.status].label} · ${item.progress}%`}
+      title={`${item.title} · ${STATUS_CONFIG[item.status].label} · ${item.progress}%${item.isAutoScheduled ? " · estimated date (not set in ClickUp)" : ""}`}
     >
       <div
         className="absolute inset-y-0 left-0 rounded-md bg-white/25"

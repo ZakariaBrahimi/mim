@@ -2,13 +2,16 @@ import {
   ClickUpApiError,
   ClickUpConfigError,
   fetchAllLists,
-  fetchAllTasks,
+  fetchTasksForLists,
   fetchWorkspaceMembers,
   isClickUpConfigured,
+  resolveCurrentSprint,
 } from "./client";
 import { mapClickUpTasksToRoadmapItems } from "./mapper";
+import { autoScheduleItems } from "./auto-schedule";
+import { getQ4Window } from "../date-utils";
 import { MEMBERS, MOCK_MILESTONES, MOCK_ROADMAP_ITEMS } from "./mock-data";
-import type { DataSourceMeta, Member, Milestone, RoadmapItem } from "../types";
+import type { DataSourceMeta, Member, Milestone, RoadmapItem, RoadmapView } from "../types";
 
 interface Result<T> {
   data: T;
@@ -23,7 +26,44 @@ function liveMeta(): DataSourceMeta {
   return { mode: "live", fetchedAt: new Date().toISOString() };
 }
 
-export async function getRoadmapItems(): Promise<Result<RoadmapItem[]>> {
+const DEFAULT_BACKLOG_LIST_ID = "901212762115"; // "Product Backlog"
+const DEFAULT_DESIGN_LIST_ID = "901213045864"; // "Design"
+
+/**
+ * Q4 roadmap: Product Backlog + whatever sprint is current, auto-scheduled
+ * against the backlog's target quarter and the sprint's own two-week window
+ * respectively, since most tickets in this workspace carry no dates at all.
+ */
+async function fetchQ4RoadmapItems(): Promise<RoadmapItem[]> {
+  const backlogListId = process.env.CLICKUP_BACKLOG_LIST_ID || DEFAULT_BACKLOG_LIST_ID;
+  const sprint = await resolveCurrentSprint();
+
+  const listIds = [backlogListId, ...(sprint ? [sprint.id] : [])];
+  const tasks = await fetchTasksForLists(listIds);
+  const items = mapClickUpTasksToRoadmapItems(tasks);
+
+  const q4 = getQ4Window();
+  const sprintItems = sprint ? items.filter((i) => i.team === sprint.name) : [];
+  const backlogItems = sprint ? items.filter((i) => i.team !== sprint.name) : items;
+
+  const scheduledBacklog = autoScheduleItems(backlogItems, q4.start, q4.end);
+  const scheduledSprint = sprint
+    ? autoScheduleItems(sprintItems, sprint.start, sprint.end)
+    : [];
+
+  return [...scheduledBacklog, ...scheduledSprint];
+}
+
+/** Design roadmap: the Design list only, auto-scheduled into the target quarter. */
+async function fetchDesignRoadmapItems(): Promise<RoadmapItem[]> {
+  const designListId = process.env.CLICKUP_DESIGN_LIST_ID || DEFAULT_DESIGN_LIST_ID;
+  const tasks = await fetchTasksForLists([designListId]);
+  const items = mapClickUpTasksToRoadmapItems(tasks);
+  const q4 = getQ4Window();
+  return autoScheduleItems(items, q4.start, q4.end);
+}
+
+export async function getRoadmapItems(view: RoadmapView = "q4"): Promise<Result<RoadmapItem[]>> {
   if (!isClickUpConfigured()) {
     return {
       data: MOCK_ROADMAP_ITEMS,
@@ -34,8 +74,7 @@ export async function getRoadmapItems(): Promise<Result<RoadmapItem[]>> {
   }
 
   try {
-    const tasks = await fetchAllTasks();
-    const items = mapClickUpTasksToRoadmapItems(tasks);
+    const items = view === "design" ? await fetchDesignRoadmapItems() : await fetchQ4RoadmapItems();
     return { data: items, meta: liveMeta() };
   } catch (err) {
     const reason =

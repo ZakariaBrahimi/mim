@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { RoadmapItem } from "@/lib/types";
+import type { RoadmapItem, RoadmapView } from "@/lib/types";
 
 interface UpdateDatesInput {
   id: string;
@@ -9,8 +9,9 @@ interface UpdateDatesInput {
   dueDate: string;
 }
 
-export function useUpdateRoadmapItemDates() {
+export function useUpdateRoadmapItemDates(view: RoadmapView) {
   const queryClient = useQueryClient();
+  const queryKey = ["clickup", "tasks", view];
 
   return useMutation({
     mutationFn: async ({ id, startDate, dueDate }: UpdateDatesInput) => {
@@ -23,14 +24,11 @@ export function useUpdateRoadmapItemDates() {
       return res.json();
     },
     onMutate: async ({ id, startDate, dueDate }) => {
-      await queryClient.cancelQueries({ queryKey: ["clickup", "tasks"] });
-      const previous = queryClient.getQueryData<{ items: RoadmapItem[] }>([
-        "clickup",
-        "tasks",
-      ]);
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<{ items: RoadmapItem[] }>(queryKey);
 
       queryClient.setQueryData<{ items: RoadmapItem[] } | undefined>(
-        ["clickup", "tasks"],
+        queryKey,
         (old) =>
           old && {
             ...old,
@@ -44,7 +42,7 @@ export function useUpdateRoadmapItemDates() {
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(["clickup", "tasks"], context.previous);
+        queryClient.setQueryData(queryKey, context.previous);
       }
     },
   });

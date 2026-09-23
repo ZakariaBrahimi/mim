@@ -32,7 +32,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { STATUS_CONFIG, STATUS_ORDER, PRIORITY_CONFIG } from "@/lib/status-config";
 import { formatLong } from "@/lib/date-utils";
 import { PRODUCTS } from "@/lib/clickup/mock-data";
-import type { RoadmapItem } from "@/lib/types";
+import type { RoadmapItem, RoadmapView } from "@/lib/types";
 import { useUpdateRoadmapItemStatus, useAddRoadmapComment } from "@/hooks/use-update-roadmap-status";
 import { cn } from "@/lib/utils";
 
@@ -41,12 +41,13 @@ interface Props {
   allItems: RoadmapItem[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  view: RoadmapView;
 }
 
-export function RoadmapDrawer({ item, allItems, open, onOpenChange }: Props) {
+export function RoadmapDrawer({ item, allItems, open, onOpenChange, view }: Props) {
   const [commentText, setCommentText] = useState("");
-  const updateStatus = useUpdateRoadmapItemStatus();
-  const addComment = useAddRoadmapComment();
+  const updateStatus = useUpdateRoadmapItemStatus(view);
+  const addComment = useAddRoadmapComment(view);
 
   if (!item) return null;
 
@@ -77,6 +78,11 @@ export function RoadmapDrawer({ item, allItems, open, onOpenChange }: Props) {
           <SheetDescription className="flex items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5" />
             {formatLong(item.startDate)} — {formatLong(item.dueDate)}
+            {item.isAutoScheduled && (
+              <Badge variant="outline" className="ml-1 text-[10px] font-normal text-amber-600">
+                Estimated — no date set in ClickUp
+              </Badge>
+            )}
           </SheetDescription>
         </SheetHeader>
 

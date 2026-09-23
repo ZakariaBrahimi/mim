@@ -17,6 +17,7 @@ import { RisksPanel } from "@/components/analytics/risks-panel";
 import { TeamWorkload } from "@/components/analytics/team-workload";
 import { QuickStats } from "@/components/analytics/quick-stats";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRoadmapItems, useMilestones } from "@/hooks/use-roadmap-data";
 import { useUpdateRoadmapItemDates } from "@/hooks/use-update-roadmap-item";
 import {
@@ -31,12 +32,24 @@ import {
 } from "@/lib/roadmap-stats";
 import { computeDisplayRange } from "@/lib/date-utils";
 import { PRODUCTS } from "@/lib/clickup/mock-data";
-import type { RoadmapFilters, RoadmapItem } from "@/lib/types";
+import type { RoadmapFilters, RoadmapItem, RoadmapView } from "@/lib/types";
+
+const VIEW_LABELS: Record<RoadmapView, { title: string; subtitle: string }> = {
+  q4: {
+    title: "MizaniyaPay Product Roadmap",
+    subtitle: "Q4 2026 — Product Backlog + Current Sprint",
+  },
+  design: {
+    title: "MizaniyaPay Design Roadmap",
+    subtitle: "Design list only",
+  },
+};
 
 export default function RoadmapPage() {
-  const { data, isLoading, isError, refetch } = useRoadmapItems();
+  const [view, setView] = useState<RoadmapView>("q4");
+  const { data, isLoading, isError, refetch } = useRoadmapItems(view);
   const { data: milestonesData } = useMilestones();
-  const updateDates = useUpdateRoadmapItemDates();
+  const updateDates = useUpdateRoadmapItemDates(view);
 
   const [filters, setFilters] = useState<RoadmapFilters>({
     product: "all",
@@ -45,6 +58,12 @@ export default function RoadmapPage() {
   });
   const [selectedItem, setSelectedItem] = useState<RoadmapItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  function handleViewChange(next: string) {
+    setView(next as RoadmapView);
+    setFilters({ product: "all", team: "all", status: "all" });
+    setDrawerOpen(false);
+  }
 
   const items = data?.items ?? [];
   const milestones = milestonesData?.milestones ?? [];
@@ -94,9 +113,9 @@ export default function RoadmapPage() {
             <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                  MizaniyaPay Product Roadmap
+                  {VIEW_LABELS[view].title}
                 </h1>
-                <p className="mt-0.5 text-sm text-slate-500">3 Month Product Delivery Plan</p>
+                <p className="mt-0.5 text-sm text-slate-500">{VIEW_LABELS[view].subtitle}</p>
               </div>
               {data?.meta.mode === "mock" && (
                 <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
@@ -104,6 +123,15 @@ export default function RoadmapPage() {
                   Showing seed data — connect ClickUp to sync live tasks
                 </div>
               )}
+            </div>
+
+            <div className="mb-5">
+              <Tabs value={view} onValueChange={handleViewChange}>
+                <TabsList>
+                  <TabsTrigger value="q4">Q4 2026 Roadmap</TabsTrigger>
+                  <TabsTrigger value="design">Design Roadmap</TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
 
             <div className="mb-5">
@@ -184,6 +212,7 @@ export default function RoadmapPage() {
         allItems={items}
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
+        view={view}
       />
     </div>
   );

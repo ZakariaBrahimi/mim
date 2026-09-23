@@ -13,6 +13,7 @@ export const PRODUCTS: Product[] = [
   { key: "market_admin", name: "Market Admin", icon: "Settings2", color: "#f97316" },
   { key: "website", name: "Website", icon: "Globe", color: "#0ea5e9" },
   { key: "mtp", name: "MTP", icon: "Landmark", color: "#64748b" },
+  { key: "general", name: "General", icon: "Layers", color: "#94a3b8" },
 ];
 
 export const MEMBERS: Member[] = [

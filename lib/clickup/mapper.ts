@@ -8,8 +8,8 @@ import type {
 
 /**
  * MizaniyaPay's ClickUp workspace categorizes tasks with a workspace-level
- * "Product" dropdown custom field rather than one space per product. These
- * are the field's real option names (confirmed against the live workspace).
+ * "Product" dropdown field (Admin, Client App, Partner, Market, Market
+ * Admin, Website, Payment Gataway, MTP) rather than one Space per product.
  */
 const PRODUCT_FIELD_TO_KEY: Record<string, ProductKey> = {
   admin: "admin",
@@ -23,23 +23,57 @@ const PRODUCT_FIELD_TO_KEY: Record<string, ProductKey> = {
   mtp: "mtp",
 };
 
+/**
+ * Fallback when the Product field isn't resolvable on a task (backlog/
+ * sprint/design tickets don't reliably carry it): MizaniyaPay's task titles
+ * consistently follow "[Type] - Product - description", so we parse the
+ * product out of the title instead of dropping the task from the roadmap.
+ * Ordered most-specific first.
+ */
+const TITLE_PRODUCT_PATTERNS: [RegExp, ProductKey][] = [
+  [/market\s*admin/i, "market_admin"],
+  [/payment\s*gat[ea]way/i, "gateway"],
+  [/\bvtpe\b/i, "gateway"],
+  [/\bwebsite\b/i, "website"],
+  [/\bmerchant\b/i, "partner"],
+  [/\bpartner\b/i, "partner"],
+  [/\bmtp\b/i, "mtp"],
+  [/\badmin\b/i, "admin"],
+  [/\bagents?\b/i, "agents"],
+  [/\bmarket\b/i, "market"],
+  [/\bmobile\b/i, "mobile"],
+];
+
+function inferProductFromTitle(title: string): ProductKey {
+  for (const [pattern, key] of TITLE_PRODUCT_PATTERNS) {
+    if (pattern.test(title)) return key;
+  }
+  return "general";
+}
+
 const STATUS_MAP: Record<string, RoadmapStatus> = {
   backlog: "backlog",
   "to do": "todo",
   todo: "todo",
   open: "todo",
   draft: "backlog",
+  "new request": "backlog",
   "needs refinement": "backlog",
   "ready for planning": "backlog",
   planned: "todo",
   "in progress": "in_progress",
   "in review": "review",
   review: "review",
+  "code review": "review",
+  "functional review": "review",
+  "design review": "review",
+  "product review": "review",
   "qa testing": "qa_testing",
   qa: "qa_testing",
   testing: "qa_testing",
   "ready for deployment": "ready_deployment",
   "ready deployment": "ready_deployment",
+  "business ready": "ready_deployment",
   staging: "ready_deployment",
   production: "production",
   done: "production",
@@ -84,7 +118,7 @@ function resolveDropdownOptionName(field: ClickUpCustomField): string | null {
   if (field.value == null) return null;
 
   if (typeof field.value === "string") {
-    const byId = options.find((o) => (o as { id?: string }).id === field.value);
+    const byId = options.find((o) => o.id === field.value);
     if (byId) return byId.name;
   }
 
@@ -96,12 +130,13 @@ function resolveDropdownOptionName(field: ClickUpCustomField): string | null {
   return null;
 }
 
-export function getProductFromTask(task: ClickUpTask): ProductKey | null {
+export function getProductFromTask(task: ClickUpTask): ProductKey {
   const field = findCustomField(task, "Product");
-  if (!field) return null;
-  const optionName = resolveDropdownOptionName(field);
-  if (!optionName) return null;
-  return PRODUCT_FIELD_TO_KEY[optionName.trim().toLowerCase()] ?? null;
+  const optionName = field ? resolveDropdownOptionName(field) : null;
+  const fromField = optionName
+    ? PRODUCT_FIELD_TO_KEY[optionName.trim().toLowerCase()]
+    : undefined;
+  return fromField ?? inferProductFromTitle(task.name);
 }
 
 function getReleaseVersion(task: ClickUpTask): string | undefined {
@@ -110,16 +145,8 @@ function getReleaseVersion(task: ClickUpTask): string | undefined {
   return field.value.trim() || undefined;
 }
 
-/**
- * Roadmap eligibility: the task must be tagged with a recognized "Product"
- * value and have a due date to place on the timeline (MizaniyaPay's ClickUp
- * tasks are granular dev tickets, most without dates — only the subset the
- * team has actually scheduled belongs on a delivery roadmap).
- */
 export function isRoadmapEligible(task: ClickUpTask): boolean {
-  if (EXCLUDED_STATUSES.has(task.status.status.trim().toLowerCase())) return false;
-  if (!getProductFromTask(task)) return false;
-  return Boolean(task.due_date);
+  return !EXCLUDED_STATUSES.has(task.status.status.trim().toLowerCase());
 }
 
 function toIsoDate(ms: string | null | undefined): string | null {
@@ -131,22 +158,23 @@ function toIsoDate(ms: string | null | undefined): string | null {
 
 const DEFAULT_DURATION_DAYS = 10;
 
-export function mapClickUpTaskToRoadmapItem(
-  task: ClickUpTask,
-): RoadmapItem | null {
+/**
+ * Maps a ClickUp task to a RoadmapItem. When the task has a due date but no
+ * start date, backfills a default lead time. When it has neither, leaves
+ * startDate/dueDate empty — the caller (data-source.ts) auto-schedules
+ * these against a view-appropriate window (current sprint dates, or the
+ * target quarter) since that needs the full item list, not just one task.
+ */
+export function mapClickUpTaskToRoadmapItem(task: ClickUpTask): RoadmapItem | null {
+  if (!isRoadmapEligible(task)) return null;
+
   const product = getProductFromTask(task);
-  if (!product) return null;
-
   const due = toIsoDate(task.due_date);
-  if (!due) return null;
-
-  // Most tasks in this workspace only have a due date — fall back to a
-  // default lead time so the Gantt bar still has a sensible width.
   const start =
     toIsoDate(task.start_date) ??
-    new Date(
-      new Date(due).getTime() - DEFAULT_DURATION_DAYS * 86_400_000,
-    ).toISOString();
+    (due
+      ? new Date(new Date(due).getTime() - DEFAULT_DURATION_DAYS * 86_400_000).toISOString()
+      : "");
 
   const assignee = task.assignees[0];
 
@@ -186,7 +214,7 @@ export function mapClickUpTaskToRoadmapItem(
         ? 100
         : Math.max(5, Math.min(90, task.status.orderindex * 15)),
     startDate: start,
-    dueDate: due,
+    dueDate: due ?? "",
     version: getReleaseVersion(task),
     taskCount: 1,
     tasks: [
@@ -195,7 +223,7 @@ export function mapClickUpTaskToRoadmapItem(
         name: task.name,
         status: mapClickUpStatus(task.status.status),
         assignee: assignee?.username,
-        dueDate: due,
+        dueDate: due ?? undefined,
         url: task.url,
       },
     ],
@@ -206,11 +234,8 @@ export function mapClickUpTaskToRoadmapItem(
   };
 }
 
-export function mapClickUpTasksToRoadmapItems(
-  tasks: ClickUpTask[],
-): RoadmapItem[] {
+export function mapClickUpTasksToRoadmapItems(tasks: ClickUpTask[]): RoadmapItem[] {
   return tasks
-    .filter(isRoadmapEligible)
     .map(mapClickUpTaskToRoadmapItem)
     .filter((item): item is RoadmapItem => item !== null);
 }

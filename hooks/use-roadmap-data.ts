@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { DataSourceMeta, Member, Milestone, RoadmapItem } from "@/lib/types";
+import type { DataSourceMeta, Member, Milestone, RoadmapItem, RoadmapView } from "@/lib/types";
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -9,11 +9,13 @@ async function fetchJson<T>(url: string): Promise<T> {
   return res.json();
 }
 
-export function useRoadmapItems() {
+export function useRoadmapItems(view: RoadmapView = "q4") {
   return useQuery({
-    queryKey: ["clickup", "tasks"],
+    queryKey: ["clickup", "tasks", view],
     queryFn: () =>
-      fetchJson<{ items: RoadmapItem[]; meta: DataSourceMeta }>("/api/clickup/tasks"),
+      fetchJson<{ items: RoadmapItem[]; meta: DataSourceMeta }>(
+        `/api/clickup/tasks?view=${view}`,
+      ),
   });
 }
 

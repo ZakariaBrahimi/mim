@@ -5,15 +5,16 @@ timeline across Mobile App, Partner Platform, Payment Gateway, Admin Dashboard,
 Agent Network and Mizaniya Market, backed by live ClickUp data (with a full
 mock mode so the app runs and looks realistic with zero configuration).
 
-**Live deployment:** https://mizaniyapay-roadmap.vercel.app — currently
-connected to the real MizaniyaPay ClickUp workspace and scoped to
-`Release Pipeline`. The timeline window is data-driven (`computeDisplayRange`
-in `lib/date-utils.ts`), not hardcoded, so as of now it's showing that list's
-actual date range: already-shipped tasks from around June 2026, since that's
-the only list with due dates consistently set today. To see genuinely
-forward-looking work, add due dates (and ideally start dates) to tasks in
-`Features Hub` or `Product Management Space` — the app will pick them up on
-the next fetch with no code changes.
+**Live deployment:** https://mizaniyapay-roadmap.vercel.app — connected to
+the real MizaniyaPay ClickUp workspace, with two tabs:
+
+- **Q4 2026 Roadmap** — Product Backlog + whichever sprint is current
+- **Design Roadmap** — the Design list only
+
+Most tickets in this workspace have no due date set, so the app
+auto-schedules those (dashed bars, an "Estimated" badge in the drawer) into
+the target window instead of showing an empty roadmap — see "Auto-scheduling"
+below.
 
 ## Stack
 
@@ -67,16 +68,17 @@ components/
   ui/                          # button, card, badge, avatar, select, sheet, tabs, progress, …
 
 lib/
-  types.ts                     # RoadmapItem, Milestone, Member, Product, filters…
+  types.ts                     # RoadmapItem, Milestone, Member, Product, RoadmapView, filters…
   status-config.ts             # Status/priority → color + label mapping
   roadmap-stats.ts             # Pure functions deriving all analytics from RoadmapItem[]
-  date-utils.ts                # Gantt math: bar positioning, month buckets, formatting
+  date-utils.ts                # Gantt math, Q4 window, sprint-name date parsing
   clickup/
-    client.ts                  # Thin ClickUp API v2 fetch wrapper
+    client.ts                  # ClickUp API v2 fetch wrapper + current-sprint resolution
     types.ts                   # ClickUp API response shapes
-    mapper.ts                  # ClickUp task -> RoadmapItem, status/space/priority mapping
+    mapper.ts                  # ClickUp task -> RoadmapItem, product/status mapping
+    auto-schedule.ts            # Synthetic dates for tasks with none set
     mock-data.ts                # Realistic MizaniyaPay seed dataset (products, members, items, milestones)
-    data-source.ts              # Chooses live ClickUp vs. mock per request, with graceful fallback
+    data-source.ts              # Per-view (q4/design) fetch + live/mock fallback
 
 hooks/
   use-roadmap-data.ts           # useRoadmapItems / useMilestones / useMembers (TanStack Query)
@@ -108,7 +110,23 @@ providers/query-provider.tsx    # QueryClientProvider + TooltipProvider
 | --- | --- |
 | `CLICKUP_API_TOKEN` | Personal API token (`pk_...`) from ClickUp → Settings → Apps |
 | `CLICKUP_WORKSPACE_ID` | The MizaniyaPay workspace ("Team") ID — `90121232813` |
-| `CLICKUP_LIST_IDS` | Optional comma-separated List IDs to scope the sync to (see below) |
+| `CLICKUP_BACKLOG_LIST_ID` | List ID for the Q4 roadmap's backlog source. Default: `901212762115` ("Product Backlog") |
+| `CLICKUP_SPRINT_FOLDER_ID` | Folder holding the dated `Sprint NN (M/D - M/D)` lists, scanned to auto-detect the current sprint. Default: `901212077700` ("Sprint Folder") |
+| `CLICKUP_CURRENT_SPRINT_LIST_ID` | Optional: force a specific sprint instead of auto-detecting |
+| `CLICKUP_DESIGN_LIST_ID` | List ID for the Design Roadmap tab. Default: `901213045864` ("Design") |
+
+### The two roadmap views
+
+The dashboard has two tabs, each backed by its own ClickUp lists
+(`lib/clickup/data-source.ts`):
+
+- **Q4 2026 Roadmap** — `CLICKUP_BACKLOG_LIST_ID` + whichever sprint list's
+  parsed date range contains today (`resolveCurrentSprint` in `client.ts`,
+  which re-detects automatically every sprint — no env var to update).
+- **Design Roadmap** — `CLICKUP_DESIGN_LIST_ID` only.
+
+`GET /api/clickup/tasks?view=q4|design` serves both; `useRoadmapItems(view)`
+drives the tab switch client-side.
 
 ### Real ClickUp structure
 
@@ -121,38 +139,35 @@ against the live workspace with these options:
 
 `lib/clickup/mapper.ts` (`PRODUCT_FIELD_TO_KEY`) maps each option to a
 roadmap product — e.g. `Client App` → **Mobile App**, `Payment Gataway` →
-**Payment Gateway**. Add an entry there if new options are added to the
-field.
-
-### Roadmap eligibility
-
-A task is pulled onto the roadmap when it has the `Product` field set **and**
-a due date — most tickets in this workspace are granular dev tasks (bugs,
-small stories) without dates, so only the subset your team has actually
-scheduled will appear. If a task has a due date but no start date, the app
-backfills a 10-day lead time so the Gantt bar still renders with a sensible
-width (`DEFAULT_DURATION_DAYS` in `mapper.ts`).
+**Payment Gateway**. When that field can't be resolved on a task (common on
+backlog/sprint/design tickets), `inferProductFromTitle` falls back to
+parsing MizaniyaPay's consistent `"[Type] - Product - description"` title
+convention, so tasks are never silently dropped from the roadmap for lack of
+product classification — anything that matches neither lands in a catch-all
+**General** bucket rather than disappearing.
 
 The `Release Version` short-text field, if set, becomes the roadmap item's
 version tag (e.g. `v1.4`).
 
-### Scoping the sync with `CLICKUP_LIST_IDS`
+### Auto-scheduling
 
-The full workspace has 30+ lists — a year of sprint boards, doc spaces, and a
-100+-item raw product backlog — which is too much (and too slow) to crawl on
-every request, and would flood a PM-level roadmap with individual dev
-tickets. Set `CLICKUP_LIST_IDS` to the lists that actually represent
-scheduled, feature-level work; for MizaniyaPay that's:
+Most tasks in `Product Backlog` and `Design` have **no due date at all** —
+they're an unscheduled backlog, not a dated release plan. Rather than show
+an empty Gantt, `lib/clickup/auto-schedule.ts` assigns synthetic dates to
+any task missing one:
 
-| List | ID | Why |
-| --- | --- | --- |
-| Release Pipeline | `901213119469` | Shipped/queued work with due dates |
-| Features Hub | `901217505734` | Feature-level planning list |
-| Product Management Space | `901218217445` | PM-curated roadmap items |
+- **Sprint-sourced tasks** get the sprint's own date range (parsed from its
+  list name, e.g. `Sprint 26 (9/23 - 10/6)`).
+- **Backlog/Design tasks** get spread across Q4 2026 (`getQ4Window` in
+  `date-utils.ts`), highest priority first, each with a 10-day default
+  duration.
 
-Leave `CLICKUP_LIST_IDS` unset to fall back to a full workspace crawl
-(`fetchAllLists` in `client.ts`, including folder-nested lists) — useful for
-exploring, but slower and much noisier.
+Tasks that already have a real due date in ClickUp are left untouched.
+Auto-scheduled items render with a dashed border on their Gantt bar and an
+"Estimated — no date set in ClickUp" badge in the detail drawer
+(`item.isAutoScheduled`), so it's always clear which dates are real vs.
+inferred. Add real due dates in ClickUp to replace the estimate — the app
+picks them up on the next fetch.
 
 ### Status mapping
 

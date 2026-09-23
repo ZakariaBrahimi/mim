@@ -7,7 +7,10 @@ export type ProductKey =
   | "market"
   | "market_admin"
   | "website"
-  | "mtp";
+  | "mtp"
+  | "general";
+
+export type RoadmapView = "q4" | "design";
 
 export type RoadmapStatus =
   | "backlog"
@@ -74,6 +77,8 @@ export interface RoadmapItem {
   attachments: { id: string; name: string; url: string }[];
   dependencies: string[];
   isMock?: boolean;
+  /** True when start/due dates were auto-scheduled (no real ClickUp dates were set on the task). */
+  isAutoScheduled?: boolean;
 }
 
 export interface Milestone {
