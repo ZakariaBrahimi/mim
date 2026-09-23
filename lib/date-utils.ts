@@ -56,6 +56,49 @@ export function computeBarPosition(
   return { leftPct, widthPct, clipped };
 }
 
+/**
+ * Derives the Gantt's display window from the actual roadmap data instead of
+ * a hardcoded quarter, so the timeline adapts to whatever date range the
+ * connected data source (mock seed data, or a live ClickUp sync scoped to
+ * different lists) actually returns. Pads out to a minimum span so a
+ * cluster of same-month items doesn't render as a single sliver column.
+ */
+export function computeDisplayRange(
+  items: { startDate: string; dueDate: string }[],
+  options?: { minMonths?: number },
+): { start: Date; end: Date } {
+  const minMonths = options?.minMonths ?? 3;
+
+  if (items.length === 0) {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + minMonths, 0);
+    return { start, end };
+  }
+
+  let minStart = new Date(items[0].startDate);
+  let maxEnd = new Date(items[0].dueDate);
+  for (const item of items) {
+    const s = new Date(item.startDate);
+    const e = new Date(item.dueDate);
+    if (s < minStart) minStart = s;
+    if (e > maxEnd) maxEnd = e;
+  }
+
+  const start = new Date(minStart.getFullYear(), minStart.getMonth(), 1);
+  let end = new Date(maxEnd.getFullYear(), maxEnd.getMonth() + 1, 0);
+
+  const monthSpan =
+    (end.getFullYear() - start.getFullYear()) * 12 +
+    (end.getMonth() - start.getMonth()) +
+    1;
+  if (monthSpan < minMonths) {
+    end = new Date(start.getFullYear(), start.getMonth() + minMonths, 0);
+  }
+
+  return { start, end };
+}
+
 export function getMonthsInRange(start: Date, end: Date): Date[] {
   const months: Date[] = [];
   const cursor = new Date(start.getFullYear(), start.getMonth(), 1);

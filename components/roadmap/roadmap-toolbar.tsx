@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PRODUCTS } from "@/lib/clickup/mock-data";
+import { monthLabel } from "@/lib/date-utils";
 import { STATUS_CONFIG, STATUS_ORDER } from "@/lib/status-config";
 import type { RoadmapFilters, RoadmapItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,8 @@ interface Props {
   onChange: (filters: RoadmapFilters) => void;
   teams: string[];
   items: RoadmapItem[];
+  rangeStart: Date;
+  rangeEnd: Date;
 }
 
 function exportCsv(items: RoadmapItem[]) {
@@ -62,12 +65,18 @@ function exportCsv(items: RoadmapItem[]) {
   URL.revokeObjectURL(url);
 }
 
-export function RoadmapToolbar({ filters, onChange, teams, items }: Props) {
+export function RoadmapToolbar({ filters, onChange, teams, items, rangeStart, rangeEnd }: Props) {
+  const rangeLabel =
+    rangeStart.getFullYear() === rangeEnd.getFullYear() &&
+    rangeStart.getMonth() === rangeEnd.getMonth()
+      ? monthLabel(rangeStart)
+      : `${monthLabel(rangeStart)} – ${monthLabel(rangeEnd)}`;
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button variant="outline" size="sm" className="gap-1.5 text-slate-600">
         <Calendar className="h-3.5 w-3.5" />
-        Oct 2026 – Dec 2026
+        {rangeLabel}
       </Button>
 
       <Select

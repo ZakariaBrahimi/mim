@@ -29,11 +29,9 @@ import {
   getUpcomingMilestones,
   getVelocity,
 } from "@/lib/roadmap-stats";
+import { computeDisplayRange } from "@/lib/date-utils";
 import { PRODUCTS } from "@/lib/clickup/mock-data";
 import type { RoadmapFilters, RoadmapItem } from "@/lib/types";
-
-const RANGE_START = new Date(Date.UTC(2026, 9, 1));
-const RANGE_END = new Date(Date.UTC(2026, 11, 31));
 
 export default function RoadmapPage() {
   const { data, isLoading, isError, refetch } = useRoadmapItems();
@@ -75,6 +73,7 @@ export default function RoadmapPage() {
   const teamWorkload = useMemo(() => getTeamWorkload(items), [items]);
   const upcomingReleases = useMemo(() => getUpcomingReleases(items), [items]);
   const upcomingMilestones = useMemo(() => getUpcomingMilestones(milestones), [milestones]);
+  const displayRange = useMemo(() => computeDisplayRange(items), [items]);
 
   function handleSelectItem(item: RoadmapItem) {
     setSelectedItem(item);
@@ -113,6 +112,8 @@ export default function RoadmapPage() {
                 onChange={setFilters}
                 teams={teams}
                 items={filteredItems}
+                rangeStart={displayRange.start}
+                rangeEnd={displayRange.end}
               />
             </div>
 
@@ -143,8 +144,8 @@ export default function RoadmapPage() {
                   <RoadmapGantt
                     items={filteredItems}
                     milestones={milestones}
-                    rangeStart={RANGE_START}
-                    rangeEnd={RANGE_END}
+                    rangeStart={displayRange.start}
+                    rangeEnd={displayRange.end}
                     onSelectItem={handleSelectItem}
                     onDragEnd={handleDragEnd}
                   />
