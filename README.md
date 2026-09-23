@@ -5,6 +5,16 @@ timeline across Mobile App, Partner Platform, Payment Gateway, Admin Dashboard,
 Agent Network and Mizaniya Market, backed by live ClickUp data (with a full
 mock mode so the app runs and looks realistic with zero configuration).
 
+**Live deployment:** https://mizaniyapay-roadmap.vercel.app — currently
+connected to the real MizaniyaPay ClickUp workspace and scoped to
+`Release Pipeline`. The timeline window is data-driven (`computeDisplayRange`
+in `lib/date-utils.ts`), not hardcoded, so as of now it's showing that list's
+actual date range: already-shipped tasks from around June 2026, since that's
+the only list with due dates consistently set today. To see genuinely
+forward-looking work, add due dates (and ideally start dates) to tasks in
+`Features Hub` or `Product Management Space` — the app will pick them up on
+the next fetch with no code changes.
+
 ## Stack
 
 - **Next.js 15** (App Router) + **TypeScript**
