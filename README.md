@@ -97,40 +97,62 @@ providers/query-provider.tsx    # QueryClientProvider + TooltipProvider
 | Variable | Description |
 | --- | --- |
 | `CLICKUP_API_TOKEN` | Personal API token (`pk_...`) from ClickUp → Settings → Apps |
-| `CLICKUP_WORKSPACE_ID` | The workspace ("Team") ID containing the MizaniyaPay spaces |
+| `CLICKUP_WORKSPACE_ID` | The MizaniyaPay workspace ("Team") ID — `90121232813` |
+| `CLICKUP_LIST_IDS` | Optional comma-separated List IDs to scope the sync to (see below) |
 
-### Expected ClickUp structure
+### Real ClickUp structure
 
-```
-Workspace: MizaniyaPay
- └─ Spaces: Mobile · Partner · Payment Gateway · Admin · Operations
-     └─ Lists: one per feature/sprint (mapped to roadmap "team")
-         └─ Tasks: development tickets
-```
+MizaniyaPay's workspace doesn't use one Space per product — it categorizes
+tasks with a **workspace-level `Product` dropdown custom field**, confirmed
+against the live workspace with these options:
 
-Space names map to roadmap products in `lib/clickup/mapper.ts`
-(`SPACE_TO_PRODUCT`) — e.g. a task in the `Partner` space becomes a
-**Partner Platform** roadmap item. Extend that map if your workspace uses
-different space names.
+`Admin` · `Client App` · `Partner` · `Market` · `Market Admin` · `Website` ·
+`Payment Gataway` (sic) · `MTP`
+
+`lib/clickup/mapper.ts` (`PRODUCT_FIELD_TO_KEY`) maps each option to a
+roadmap product — e.g. `Client App` → **Mobile App**, `Payment Gataway` →
+**Payment Gateway**. Add an entry there if new options are added to the
+field.
 
 ### Roadmap eligibility
 
-Only tasks with a custom field named **`Roadmap`** set to **`Yes`** are pulled
-onto the roadmap (`isRoadmapEligible` in `mapper.ts`). This keeps the roadmap
-free of day-to-day tickets — create a Dropdown or Checkbox custom field named
-`Roadmap` in ClickUp and set it to `Yes` on the tasks that represent features
-you want visualized.
+A task is pulled onto the roadmap when it has the `Product` field set **and**
+a due date — most tickets in this workspace are granular dev tasks (bugs,
+small stories) without dates, so only the subset your team has actually
+scheduled will appear. If a task has a due date but no start date, the app
+backfills a 10-day lead time so the Gantt bar still renders with a sensible
+width (`DEFAULT_DURATION_DAYS` in `mapper.ts`).
 
-Each eligible task needs a **start date** and a **due date** set in ClickUp —
-tasks missing either are skipped, since the Gantt bar can't be positioned.
+The `Release Version` short-text field, if set, becomes the roadmap item's
+version tag (e.g. `v1.4`).
+
+### Scoping the sync with `CLICKUP_LIST_IDS`
+
+The full workspace has 30+ lists — a year of sprint boards, doc spaces, and a
+100+-item raw product backlog — which is too much (and too slow) to crawl on
+every request, and would flood a PM-level roadmap with individual dev
+tickets. Set `CLICKUP_LIST_IDS` to the lists that actually represent
+scheduled, feature-level work; for MizaniyaPay that's:
+
+| List | ID | Why |
+| --- | --- | --- |
+| Release Pipeline | `901213119469` | Shipped/queued work with due dates |
+| Features Hub | `901217505734` | Feature-level planning list |
+| Product Management Space | `901218217445` | PM-curated roadmap items |
+
+Leave `CLICKUP_LIST_IDS` unset to fall back to a full workspace crawl
+(`fetchAllLists` in `client.ts`, including folder-nested lists) — useful for
+exploring, but slower and much noisier.
 
 ### Status mapping
 
 ClickUp statuses are mapped to the roadmap's fixed status set (`STATUS_MAP` in
 `mapper.ts`): Backlog, Todo, In Progress, Review, QA Testing, Ready
-Deployment, Production, Blocked. Unrecognized ClickUp statuses default to
-Backlog — add an entry to `STATUS_MAP` for any custom status names your
-workspace uses.
+Deployment, Production, Blocked — including this workspace's real status
+names (`needs refinement`, `ready for planning`, `draft`, `planned`, `ready
+for deployment`, `complete`, …). Tasks with a `canceled`/`cancelled` status
+are excluded entirely. Unrecognized statuses default to Backlog — add an
+entry to `STATUS_MAP` for any other custom status names your workspace uses.
 
 ### Drag-and-drop → ClickUp sync
 

@@ -7,6 +7,12 @@ export const PRODUCTS: Product[] = [
   { key: "admin", name: "Admin Dashboard", icon: "ShieldCheck", color: "#f59e0b" },
   { key: "agents", name: "Agent Network", icon: "Users", color: "#14b8a6" },
   { key: "market", name: "Mizaniya Market", icon: "Store", color: "#ec4899" },
+  // The following three exist as real "Product" field options in the
+  // MizaniyaPay ClickUp workspace but aren't part of the original 6-product
+  // seed set — only populated when synced live from ClickUp.
+  { key: "market_admin", name: "Market Admin", icon: "Settings2", color: "#f97316" },
+  { key: "website", name: "Website", icon: "Globe", color: "#0ea5e9" },
+  { key: "mtp", name: "MTP", icon: "Landmark", color: "#64748b" },
 ];
 
 export const MEMBERS: Member[] = [

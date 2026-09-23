@@ -70,12 +70,36 @@ export async function fetchSpaceLists(spaceId: string): Promise<ClickUpList[]> {
   return data.lists;
 }
 
+export async function fetchSpaceFolders(spaceId: string) {
+  const data = await clickupFetch<{ folders: { id: string; name: string }[] }>(
+    `/space/${spaceId}/folder`,
+  );
+  return data.folders;
+}
+
+export async function fetchFolderLists(folderId: string): Promise<ClickUpList[]> {
+  const data = await clickupFetch<{ lists: ClickUpList[] }>(
+    `/folder/${folderId}/list`,
+  );
+  return data.lists;
+}
+
+/** Crawls every space, including lists nested inside folders. */
 export async function fetchAllLists(): Promise<ClickUpList[]> {
   const spaces = await fetchWorkspaceSpaces();
-  const lists = await Promise.all(
-    spaces.map((s) => fetchSpaceLists(s.id).catch(() => [] as ClickUpList[])),
+  const perSpace = await Promise.all(
+    spaces.map(async (s) => {
+      const [topLevelLists, folders] = await Promise.all([
+        fetchSpaceLists(s.id).catch(() => [] as ClickUpList[]),
+        fetchSpaceFolders(s.id).catch(() => [] as { id: string; name: string }[]),
+      ]);
+      const folderLists = await Promise.all(
+        folders.map((f) => fetchFolderLists(f.id).catch(() => [] as ClickUpList[])),
+      );
+      return [...topLevelLists, ...folderLists.flat()];
+    }),
   );
-  return lists.flat();
+  return perSpace.flat();
 }
 
 export async function fetchListTasks(listId: string): Promise<ClickUpTask[]> {
@@ -85,7 +109,30 @@ export async function fetchListTasks(listId: string): Promise<ClickUpTask[]> {
   return data.tasks;
 }
 
+export async function fetchTasksForLists(listIds: string[]): Promise<ClickUpTask[]> {
+  const tasksByList = await Promise.all(
+    listIds.map((id) => fetchListTasks(id).catch(() => [] as ClickUpTask[])),
+  );
+  return tasksByList.flat();
+}
+
+/**
+ * List IDs to scope the sync to, via CLICKUP_LIST_IDS (comma-separated).
+ * Scoping avoids crawling every sprint/backlog list in the workspace —
+ * pointing this at your release/feature-planning lists keeps the roadmap to
+ * scheduled, feature-level work instead of every raw dev ticket.
+ */
+export function getConfiguredListIds(): string[] | null {
+  const raw = process.env.CLICKUP_LIST_IDS;
+  if (!raw) return null;
+  const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return ids.length ? ids : null;
+}
+
 export async function fetchAllTasks(): Promise<ClickUpTask[]> {
+  const configuredListIds = getConfiguredListIds();
+  if (configuredListIds) return fetchTasksForLists(configuredListIds);
+
   const lists = await fetchAllLists();
   const tasksByList = await Promise.all(
     lists.map((l) => fetchListTasks(l.id).catch(() => [] as ClickUpTask[])),

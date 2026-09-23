@@ -4,7 +4,10 @@ export type ProductKey =
   | "gateway"
   | "admin"
   | "agents"
-  | "market";
+  | "market"
+  | "market_admin"
+  | "website"
+  | "mtp";
 
 export type RoadmapStatus =
   | "backlog"

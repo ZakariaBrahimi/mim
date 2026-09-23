@@ -1,4 +1,4 @@
-import type { ClickUpTask } from "./types";
+import type { ClickUpCustomField, ClickUpTask } from "./types";
 import type {
   Priority,
   RoadmapItem,
@@ -6,20 +6,21 @@ import type {
   ProductKey,
 } from "../types";
 
-const SPACE_TO_PRODUCT: Record<string, ProductKey> = {
-  mobile: "mobile",
-  "mobile app": "mobile",
-  partner: "partner",
-  "partner platform": "partner",
-  "payment gateway": "gateway",
-  gateway: "gateway",
+/**
+ * MizaniyaPay's ClickUp workspace categorizes tasks with a workspace-level
+ * "Product" dropdown custom field rather than one space per product. These
+ * are the field's real option names (confirmed against the live workspace).
+ */
+const PRODUCT_FIELD_TO_KEY: Record<string, ProductKey> = {
   admin: "admin",
-  "admin panel": "admin",
-  operations: "agents",
-  agents: "agents",
-  "agent network": "agents",
+  "client app": "mobile",
+  partner: "partner",
   market: "market",
-  "mizaniya market": "market",
+  "market admin": "market_admin",
+  website: "website",
+  "payment gataway": "gateway", // typo present in the live ClickUp field option
+  "payment gateway": "gateway",
+  mtp: "mtp",
 };
 
 const STATUS_MAP: Record<string, RoadmapStatus> = {
@@ -27,6 +28,10 @@ const STATUS_MAP: Record<string, RoadmapStatus> = {
   "to do": "todo",
   todo: "todo",
   open: "todo",
+  draft: "backlog",
+  "needs refinement": "backlog",
+  "ready for planning": "backlog",
+  planned: "todo",
   "in progress": "in_progress",
   "in review": "review",
   review: "review",
@@ -43,6 +48,9 @@ const STATUS_MAP: Record<string, RoadmapStatus> = {
   blocked: "blocked",
 };
 
+/** Statuses that mean a task is no longer relevant to the roadmap at all. */
+const EXCLUDED_STATUSES = new Set(["canceled", "cancelled"]);
+
 export function mapClickUpStatus(status: string): RoadmapStatus {
   return STATUS_MAP[status.trim().toLowerCase()] ?? "backlog";
 }
@@ -57,49 +65,88 @@ export function mapClickUpPriority(
   return "medium";
 }
 
-export function mapSpaceToProduct(spaceName: string): ProductKey | null {
-  return SPACE_TO_PRODUCT[spaceName.trim().toLowerCase()] ?? null;
+function findCustomField(
+  task: ClickUpTask,
+  name: string,
+): ClickUpCustomField | undefined {
+  return task.custom_fields.find(
+    (f) => f.name.trim().toLowerCase() === name.trim().toLowerCase(),
+  );
 }
 
-/** Custom field gate: only tasks explicitly flagged "Roadmap = Yes" surface on the roadmap. */
-export function isRoadmapEligible(task: ClickUpTask): boolean {
-  const field = task.custom_fields.find(
-    (f) => f.name.trim().toLowerCase() === "roadmap",
-  );
-  if (!field) return false;
-
-  if (typeof field.value === "boolean") return field.value;
-
-  if (typeof field.value === "number" && field.type_config?.options) {
-    const opt = field.type_config.options.find(
-      (o) => Number((o as { orderindex?: number }).orderindex) === field.value,
-    );
-    return opt?.name.trim().toLowerCase() === "yes";
-  }
+/**
+ * Resolves a dropdown/label custom field's selected option to its name.
+ * ClickUp represents the selection either as the option's orderindex
+ * (legacy dropdowns) or its UUID (new_drop_down fields) — this handles both.
+ */
+function resolveDropdownOptionName(field: ClickUpCustomField): string | null {
+  const options = field.type_config?.options ?? [];
+  if (field.value == null) return null;
 
   if (typeof field.value === "string") {
-    return field.value.trim().toLowerCase() === "yes";
+    const byId = options.find((o) => (o as { id?: string }).id === field.value);
+    if (byId) return byId.name;
   }
 
-  return false;
+  if (typeof field.value === "number") {
+    const byIndex = options.find((o) => o.orderindex === field.value);
+    if (byIndex) return byIndex.name;
+  }
+
+  return null;
 }
 
-function toIsoDate(ms: string | null): string | null {
+export function getProductFromTask(task: ClickUpTask): ProductKey | null {
+  const field = findCustomField(task, "Product");
+  if (!field) return null;
+  const optionName = resolveDropdownOptionName(field);
+  if (!optionName) return null;
+  return PRODUCT_FIELD_TO_KEY[optionName.trim().toLowerCase()] ?? null;
+}
+
+function getReleaseVersion(task: ClickUpTask): string | undefined {
+  const field = findCustomField(task, "Release Version");
+  if (!field || typeof field.value !== "string") return undefined;
+  return field.value.trim() || undefined;
+}
+
+/**
+ * Roadmap eligibility: the task must be tagged with a recognized "Product"
+ * value and have a due date to place on the timeline (MizaniyaPay's ClickUp
+ * tasks are granular dev tickets, most without dates — only the subset the
+ * team has actually scheduled belongs on a delivery roadmap).
+ */
+export function isRoadmapEligible(task: ClickUpTask): boolean {
+  if (EXCLUDED_STATUSES.has(task.status.status.trim().toLowerCase())) return false;
+  if (!getProductFromTask(task)) return false;
+  return Boolean(task.due_date);
+}
+
+function toIsoDate(ms: string | null | undefined): string | null {
   if (!ms) return null;
   const n = Number(ms);
   if (Number.isNaN(n)) return null;
   return new Date(n).toISOString();
 }
 
+const DEFAULT_DURATION_DAYS = 10;
+
 export function mapClickUpTaskToRoadmapItem(
   task: ClickUpTask,
 ): RoadmapItem | null {
-  const product = mapSpaceToProduct(task.space.name);
+  const product = getProductFromTask(task);
   if (!product) return null;
 
-  const start = toIsoDate(task.start_date) ?? toIsoDate(task.date_created ?? null);
   const due = toIsoDate(task.due_date);
-  if (!start || !due) return null;
+  if (!due) return null;
+
+  // Most tasks in this workspace only have a due date — fall back to a
+  // default lead time so the Gantt bar still has a sensible width.
+  const start =
+    toIsoDate(task.start_date) ??
+    new Date(
+      new Date(due).getTime() - DEFAULT_DURATION_DAYS * 86_400_000,
+    ).toISOString();
 
   const assignee = task.assignees[0];
 
@@ -134,9 +181,13 @@ export function mapClickUpTaskToRoadmapItem(
         },
     status: mapClickUpStatus(task.status.status),
     priority: mapClickUpPriority(task.priority),
-    progress: task.status.type === "closed" ? 100 : task.status.orderindex * 15,
+    progress:
+      task.status.type === "closed" || task.status.type === "done"
+        ? 100
+        : Math.max(5, Math.min(90, task.status.orderindex * 15)),
     startDate: start,
     dueDate: due,
+    version: getReleaseVersion(task),
     taskCount: 1,
     tasks: [
       {

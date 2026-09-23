@@ -1,4 +1,15 @@
-import { Smartphone, Handshake, CreditCard, ShieldCheck, Users, Store, type LucideIcon } from "lucide-react";
+import {
+  Smartphone,
+  Handshake,
+  CreditCard,
+  ShieldCheck,
+  Users,
+  Store,
+  Settings2,
+  Globe,
+  Landmark,
+  type LucideIcon,
+} from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = {
   Smartphone,
@@ -7,6 +18,9 @@ const ICONS: Record<string, LucideIcon> = {
   ShieldCheck,
   Users,
   Store,
+  Settings2,
+  Globe,
+  Landmark,
 };
 
 export function ProductIcon({
